@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カバレッジサマリーダッシュボード</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .dashboard {
+            display: grid;
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .card h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 1.5em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 450px;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .data-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+
+        .data-table tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .data-table td {
+            font-size: 0.95em;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            opacity: 0.8;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .chart-container {
+                height: 300px;
+            }
+
+            .card {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 カバレッジサマリーダッシュボード</h1>
+            <p>Chart.jsによるインタラクティブな可視化</p>
+        </div>
+
+        <div class="dashboard">
+            <!-- 統計カード -->
+            <div class="card">
+                <div class="stats-grid" id="statsGrid">
+                    <!-- 統計情報が動的に挿入されます -->
+                </div>
+            </div>
+
+            <!-- メインの時系列グラフ -->
+            <div class="card">
+                <h2>📈 時系列グラフ</h2>
+                <div class="chart-container">
+                    <canvas id="lineChart"></canvas>
+                </div>
+            </div>
+
+            <!-- データテーブル -->
+            <div class="card">
+                <h2>📋 Rowデータ</h2>
+                <table class="data-table" id="dataTable">
+                    <thead>
+                        <tr>
+                            <th>日付</th>
+                            <th>A</th>
+                            <th>B</th>
+                            <th>C</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- データが動的に挿入されます -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Powered by Chart.js | 最終更新: <span id="lastUpdate"></span></p>
+        </div>
+    </div>
+
+    <script>
+        // Chart.jsのデフォルト設定
+        Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif';
+        Chart.defaults.font.size = 13;
+
+        async function loadData() {
+            try {
+                const response = await fetch('../coverage-summary.csv');
+                const text = await response.text();
+                const lines = text.trim().split('\n');
+
+                // CSVをパース
+                const headers = lines[0].split(',');
+                const data = lines.slice(1)
+                    .filter(line => line.trim() !== '') // 空行を除外
+                    .map(line => {
+                        const values = line.split(',').map(v => v.trim());
+                        return {
+                            date: values[0],
+                            A: parseInt(values[1]),
+                            B: parseInt(values[2]),
+                            C: parseInt(values[3])
+                        };
+                    });
+
+                return { headers, data };
+            } catch (error) {
+                console.error('データ読み込みエラー:', error);
+                return null;
+            }
+        }
+
+        function createStats(data) {
+            const statsGrid = document.getElementById('statsGrid');
+
+            // 統計を計算
+            const sumA = data.reduce((sum, row) => sum + row.A, 0);
+            const sumB = data.reduce((sum, row) => sum + row.B, 0);
+            const sumC = data.reduce((sum, row) => sum + row.C, 0);
+            const avgA = (sumA / data.length).toFixed(1);
+            const avgB = (sumB / data.length).toFixed(1);
+            const avgC = (sumC / data.length).toFixed(1);
+            const maxA = Math.max(...data.map(row => row.A));
+            const maxB = Math.max(...data.map(row => row.B));
+            const maxC = Math.max(...data.map(row => row.C));
+
+            const stats = [
+                { label: 'A 平均', value: avgA, color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+                { label: 'B 平均', value: avgB, color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
+                { label: 'C 平均', value: avgC, color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' },
+                { label: 'A 最大', value: maxA, color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+                { label: 'B 最大', value: maxB, color: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
+                { label: 'C 最大', value: maxC, color: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' },
+                { label: 'A 合計', value: sumA, color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+                { label: '総レコード数', value: data.length, color: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' }
+            ];
+
+            statsGrid.innerHTML = stats.map(stat => `
+                <div class="stat-card" style="background: ${stat.color}">
+                    <h3>${stat.label}</h3>
+                    <div class="value">${stat.value}</div>
+                </div>
+            `).join('');
+        }
+
+        function createLineChart(data) {
+            const ctx = document.getElementById('lineChart').getContext('2d');
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(row => {
+                        // yyyymmdd -> yyyy/mm/dd
+                        const d = row.date;
+                        return `${d.substr(0,4)}/${d.substr(4,2)}/${d.substr(6,2)}`;
+                    }),
+                    datasets: [
+                        {
+                            label: 'シリーズ A',
+                            data: data.map(row => row.A),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            pointBackgroundColor: '#667eea',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        },
+                        {
+                            label: 'シリーズ B',
+                            data: data.map(row => row.B),
+                            borderColor: '#f5576c',
+                            backgroundColor: 'rgba(245, 87, 108, 0.1)',
+                            borderWidth: 3,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            pointBackgroundColor: '#f5576c',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        },
+                        {
+                            label: 'シリーズ C',
+                            data: data.map(row => row.C),
+                            borderColor: '#00f2fe',
+                            backgroundColor: 'rgba(0, 242, 254, 0.1)',
+                            borderWidth: 3,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            pointBackgroundColor: '#00f2fe',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                },
+                                padding: 20,
+                                usePointStyle: true
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            titleFont: {
+                                size: 14
+                            },
+                            bodyFont: {
+                                size: 13
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'データポイント',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: '値',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
+        function createTable(data) {
+            const tableBody = document.getElementById('tableBody');
+
+            tableBody.innerHTML = data.map(row => {
+                const d = row.date;
+                const formattedDate = `${d.substr(0,4)}/${d.substr(4,2)}/${d.substr(6,2)}`;
+                return `
+                    <tr>
+                        <td><strong>${formattedDate}</strong></td>
+                        <td>${row.A}</td>
+                        <td>${row.B}</td>
+                        <td>${row.C}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function init() {
+            const result = await loadData();
+            if (result) {
+                createStats(result.data);
+                createLineChart(result.data);
+                createTable(result.data);
+
+                // 最終更新時刻を更新
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleString('ja-JP');
+            }
+        }
+
+        // ダッシュボードを初期化
+        init();
+    </script>
+</body>
+</html>
